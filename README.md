@@ -1,117 +1,280 @@
 # Minitaller: Emulación y Depuración en Sistemas Embebidos
-## QEMU · GDB · Raspberry Pi · Python · pdb
+## QEMU · GDB · Raspberry Pi OS · Python · pdb
 
-> **Curso:** Taller de Sistemas Embebidos — ITCR  
-> **Duración:** 90–110 minutos  
+> **Curso:** Taller de Sistemas Embebidos — ITCR
+> **Autor:** David Leitón Flores
 > **Entorno:** Docker (reproducible en cualquier laptop)
-
----
-
-## Estructura del repositorio
-
-```
-minitaller-embebidos/
-├── Dockerfile                  ← entorno completo (QEMU + GDB + Python)
-├── docker-compose.yml          ← inicio rápido
-│
-├── demo_gdb/                   ← Demo del profesor (QEMU + GDB)
-│   ├── semaforo.c              ← programa C bare-metal
-│   ├── startup.s               ← punto de entrada ARM
-│   ├── linker.ld               ← script de enlace
-│   ├── Makefile                ← compilación cruzada ARM
-│   ├── run_qemu.sh             ← lanzar QEMU con gdbstub
-│   └── demo.gdb                ← guion GDB para la demo
-│
-└── tutorial_pdb/               ← Tutorial para estudiantes
-    ├── semaforo_vision.py      ← programa con 2 bugs (OpenCV)
-    ├── semaforo_vision_SOLUCION.py  ← versión corregida
-    └── README.md               ← tutorial paso a paso con pdb
-```
-
----
 
 ## Requisitos del host
 
-| Herramienta | Versión mínima |
-|-------------|----------------|
-| Docker      | 20.10+         |
-| docker compose | v2+         |
-| RAM disponible | ≥ 2 GB     |
+| Herramienta       | Versión mínima |
+|-------------------|----------------|
+| Docker            | 20.10+         |
+| docker compose    | v2+            |
+| RAM disponible    | ≥ 4 GB         |
+| Espacio en disco  | ≥ 5 GB         |
 
 ---
 
-## Inicio rápido
+## Paso 0 — Descargar imágenes (una sola vez, antes del build)
 
-### Opción A — Docker Compose (recomendado)
+Las imágenes no están en el repo por su tamaño. Descargarlas en `demo_gdb/images/`:
 
 ```bash
-# Construir la imagen (una sola vez, ~5 min)
+cd demo_gdb/images
+
+# Kernel ARMv6 compatible con versatilepb + DTB
+wget https://github.com/dhruvvyas90/qemu-rpi-kernel/raw/master/kernel-qemu-4.19.50-buster
+wget https://github.com/dhruvvyas90/qemu-rpi-kernel/raw/master/versatile-pb.dtb
+
+# Renombrar al nombre esperado por run_qemu_rpi.sh
+mv kernel-qemu-4.19.50-buster kernel-qemu
+```
+
+```bash
+# Imagen Raspbian Buster Lite (servidor oficial Raspberry Pi)
+wget https://downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2021-05-28/2021-05-07-raspios-buster-armhf-lite.zip
+unzip 2021-05-07-raspios-buster-armhf-lite.zip
+mv 2021-05-07-raspios-buster-armhf-lite.img raspios.img
+rm 2021-05-07-raspios-buster-armhf-lite.zip
+```
+
+Verificar que los tres archivos existen:
+```bash
+ls -lh demo_gdb/images/
+# raspios.img       ~1.8 GB
+# kernel-qemu       ~4-5 MB
+# versatile-pb.dtb  ~10-20 KB
+```
+
+---
+
+## Gestión de contenedores
+
+### Ver qué contenedores están corriendo
+```bash
+docker ps          # contenedores activos
+docker ps -a       # activos + detenidos
+```
+
+### Limpiar contenedores huérfanos
+```bash
+docker compose down --remove-orphans
+```
+Hacer esto siempre que aparezcan warnings de `orphan containers` o el error
+`Failed to get write lock` al arrancar QEMU.
+
+### Nombre típico del contenedor
+`docker compose run` genera nombres con este formato:
+```
+mini-taller-debugger-y-emuladores-embebidos-run-XXXXXXXX
+```
+Usar siempre `docker ps` para ver el nombre exacto.
+
+---
+
+## Cómo entrar al contenedor
+
+### CASO A — Primera vez (repo recién clonado)
+```bash
+# Construir la imagen (~15-20 min, compila gdbserver ARMv6 desde fuente)
 docker compose build
 
-# Abrir el contenedor principal
-docker compose run embebidos
+# Entrar al contenedor
+docker compose run embebidos bash
 ```
 
-### Opción B — Docker directo
-
+### CASO B — Ya hice build, quiero entrar de nuevo
 ```bash
-# Construir
-docker build -t embebidos .
+# Crear un contenedor nuevo
+docker compose run embebidos bash
 
-# Ejecutar con TTY interactivo
-docker run -it --rm embebidos
+# O, si ya hay uno corriendo, abrir otra terminal en el mismo
+docker ps
+docker exec -it <nombre-del-contenedor> bash
+```
+
+### CASO C — Necesito una segunda o tercera terminal (para la demo)
+```bash
+docker ps
+docker exec -it <nombre-del-contenedor> bash
 ```
 
 ---
 
-## Demo del profesor: QEMU + GDB
+## Demo del profesor: QEMU + GDB + Raspberry Pi OS
 
-### Terminal 1 — Compilar y lanzar QEMU
+La demo requiere **3 terminales** abiertas simultáneamente.
+
+### Antes de empezar — limpiar sesiones anteriores
+```bash
+docker compose down --remove-orphans
+docker ps | grep minitaller
+# No debe mostrar nada
+```
+
+---
+
+### TERMINAL 1 — Arrancar QEMU con Raspberry Pi OS
 
 ```bash
-# Dentro del contenedor
+docker compose run embebidos bash
+```
+
+```bash
 cd /workspace/demo_gdb
-make all                    # compila el semáforo para ARM
-./run_qemu.sh               # lanza QEMU, la CPU queda DETENIDA
+./run_qemu_rpi.sh
 ```
 
-Verás:
+Esperar ~60 segundos hasta ver:
 ```
-========================================
-  QEMU + GDB  |  Semáforo ARM Bare-Metal
-  Máquina : versatilepb
-  ⚡ QEMU iniciado y DETENIDO esperando GDB
-  Abra otra terminal y ejecute:
-      gdb-multiarch semaforo.elf
-      (gdb) target remote localhost:1234
+raspberrypi login:
 ```
 
-### Terminal 2 — Conectar GDB (modo demo automático)
+Login:
+- Usuario: `pi` → Enter
+- Password: `raspberry` → Enter (no se ve al escribir)
+
+Debes ver:
+```
+pi@raspberrypi:~$
+```
+
+**No escribas nada más aquí todavía.**
+
+---
+
+### TERMINAL 2 — Copiar archivos al RPi OS
 
 ```bash
-# Nueva terminal, mismo contenedor
-docker exec -it minitaller-embebidos bash
+docker ps
+docker exec -it <nombre-del-contenedor> bash
+```
+
+```bash
+# PASO CRÍTICO: usar el binario pre-compilado con ARMv6 correcto.
+# El volumen mount del compose sobreescribe demo_gdb/, por eso el binario
+# correcto está guardado en /usr/local/bin/semaforo_rpi_prebuilt.
+cp /usr/local/bin/semaforo_rpi_prebuilt /workspace/demo_gdb/semaforo_rpi
+
+# Verificar arquitectura correcta
+file /workspace/demo_gdb/semaforo_rpi
+# → ELF 32-bit LSB executable, ARM ... for GNU/Linux 4.19.0
+
+file /usr/local/bin/gdbserver-armv6
+# → ELF 32-bit LSB executable, ARM ... for GNU/Linux 4.19.0
+```
+
+```bash
 cd /workspace/demo_gdb
 
-# Modo demo automático (ejecuta demo.gdb)
-gdb-multiarch -x demo.gdb semaforo.elf
+# Copiar gdbserver al RPi OS via SSH (puerto 5022 → RPi OS :22)
+sshpass -p raspberry scp \
+    -o StrictHostKeyChecking=no -P 5022 \
+    /usr/local/bin/gdbserver-armv6 \
+    pi@localhost:/tmp/gdbserver
+
+# Copiar semaforo_rpi al RPi OS
+sshpass -p raspberry scp \
+    -o StrictHostKeyChecking=no -P 5022 \
+    semaforo_rpi \
+    pi@localhost:/tmp/semaforo_rpi
+
+# Dar permisos y verificar
+sshpass -p raspberry ssh \
+    -o StrictHostKeyChecking=no -p 5022 pi@localhost \
+    "chmod +x /tmp/gdbserver /tmp/semaforo_rpi && \
+     echo '--- OK ---' && ls -lh /tmp/gdbserver /tmp/semaforo_rpi"
 ```
 
-O bien, **modo manual paso a paso** para mostrar en clase:
+Debes ver:
+```
+--- OK ---
+-rwxr-xr-x 1 pi pi 7.9M ... /tmp/gdbserver
+-rwxr-xr-x 1 pi pi 454K ... /tmp/semaforo_rpi
+```
+
+---
+
+### TERMINAL 1 — Lanzar gdbserver dentro del RPi OS
+
+En el prompt `pi@raspberrypi:~$`:
 
 ```bash
-gdb-multiarch semaforo.elf
-(gdb) set architecture arm
-(gdb) target remote localhost:1234
-(gdb) break main
-(gdb) continue
-(gdb) print estado_actual
-(gdb) print ciclos_completados
-(gdb) next
-(gdb) step
-(gdb) info registers
-(gdb) set variable ciclos_completados = 99
-(gdb) continue
+/tmp/gdbserver :2345 /tmp/semaforo_rpi
+```
+
+Debes ver:
+```
+Process /tmp/semaforo_rpi created; pid = 462
+Listening on port 2345
+```
+
+El programa queda **pausado esperando GDB**. No escribas más aquí.
+
+---
+
+### TERMINAL 3 — Conectar GDB y depurar
+
+```bash
+docker exec -it <nombre-del-contenedor> bash
+gdb-multiarch /workspace/demo_gdb/semaforo_rpi
+```
+
+Dentro del prompt `(gdb)`:
+
+```gdb
+set architecture arm
+target remote localhost:2345
+```
+→ `Remote debugging using localhost:2345`
+
+```gdb
+break main
+continue
+```
+→ `Breakpoint 1, main () at semaforo_rpi.c:72`
+
+---
+
+### Comandos de la demo en clase
+
+```gdb
+print estado_actual          → $1 = ROJO
+print ciclos_completados     → $2 = 0
+print duracion_seg           → $3 = {5, 2, 4}
+next                         → avanza una línea
+break cambiar_estado         → breakpoint en cambio de estado
+continue                     → corre hasta el cambio
+step                         → entra dentro de la función
+info locals                  → variables locales
+info registers               → registros ARM (r0-r15, pc, sp, lr)
+set variable ciclos_completados = 2   → modifica en tiempo real
+continue                     → el semáforo termina antes
+quit                         → salir de GDB
+```
+
+### Modo demo automático
+```bash
+gdb-multiarch -x /workspace/demo_gdb/demo.gdb /workspace/demo_gdb/semaforo_rpi
+```
+Ejecuta toda la secuencia automáticamente: conecta, breakpoints, imprime variables,
+modifica `ciclos_completados` en vivo y termina solo.
+
+---
+
+### Salir limpiamente
+
+```bash
+# Terminal 3 (GDB)
+quit
+
+# Terminal 1 (QEMU): Ctrl+A luego X
+# O desde el RPi OS:
+sudo poweroff
+
+# Limpiar todos los contenedores
+docker compose down --remove-orphans
 ```
 
 ---
@@ -119,13 +282,16 @@ gdb-multiarch semaforo.elf
 ## Tutorial de estudiantes: Python + pdb
 
 ```bash
-# Dentro del contenedor
+docker compose run embebidos bash
 cd /workspace/tutorial_pdb
 
-# Ejecutar el programa con bugs
+# Observar los síntomas de los bugs
 python3 semaforo_vision.py
 
-# Seguir el tutorial paso a paso:
+# Iniciar depuración con pdb
+python3 -m pdb semaforo_vision.py
+
+# Ver el tutorial completo
 cat README.md
 ```
 
@@ -133,226 +299,64 @@ Las imágenes generadas se guardan en `/tmp/semaforo_*.png`.
 
 ---
 
-## Arquitectura de la demo
+## Arquitectura del sistema
 
 ```
-┌─────────────────────────────────────────────────┐
-│  Docker Container (Ubuntu 22.04)                │
-│                                                 │
-│  ┌─────────────────────┐  ┌───────────────────┐ │
-│  │   QEMU (Terminal 1) │  │  GDB (Terminal 2) │ │
-│  │                     │  │                   │ │
-│  │  qemu-system-arm    │◄─┤  gdb-multiarch    │ │
-│  │  -M versatilepb     │  │  target remote    │ │
-│  │  -s -S              │  │  localhost:1234   │ │
-│  │                     │  │                   │ │
-│  │  [semaforo.elf]     │  │  break/step/print │ │
-│  │  ARM bare-metal     │  │                   │ │
-│  └─────────────────────┘  └───────────────────┘ │
-│           ↑                                     │
-│    gdbstub en :1234                             │
-└─────────────────────────────────────────────────┘
-```
-
----
-
-## Comandos GDB de referencia rápida
-
-```
-break <función>          → poner breakpoint
-break semaforo.c:42      → breakpoint en línea específica
-continue  (c)            → continuar hasta próximo breakpoint
-next      (n)            → siguiente línea (sin entrar funciones)
-step      (s)            → siguiente línea (entra en funciones)
-print <var>              → imprimir variable
-print estado_actual      → ver estado del semáforo
-info registers           → ver todos los registros ARM
-info locals              → ver variables locales
-set variable x = 99      → modificar variable en tiempo real
-delete <n>               → eliminar breakpoint N
-quit      (q)            → salir de GDB
+┌──────────────────────────────────────────────────────────────┐
+│  Laptop (host)                                               │
+│                                                              │
+│  ┌───────────────────────────────────────────────────────┐   │
+│  │  Docker Container (Ubuntu 22.04)                      │   │
+│  │                                                       │   │
+│  │  ┌─────────────────────┐   ┌───────────────────────┐  │   │
+│  │  │  QEMU (Terminal 1)  │   │   GDB  (Terminal 3)   │  │   │
+│  │  │                     │   │                       │  │   │
+│  │  │  qemu-system-arm    │◄──│  gdb-multiarch        │  │   │
+│  │  │  -M versatilepb     │   │  target remote        │  │   │
+│  │  │  arm1176 / 256MB    │   │  localhost:2345       │  │   │
+│  │  │                     │   │                       │  │   │
+│  │  │  ┌───────────────┐  │   │  break/step/print     │  │   │
+│  │  │  │ Raspberry Pi  │  │   │  set variable         │  │   │
+│  │  │  │ OS (Buster)   │  │   └───────────────────────┘  │   │
+│  │  │  │               │  │                               │   │
+│  │  │  │ gdbserver     │  │   ┌───────────────────────┐  │   │
+│  │  │  │ :2345         │  │   │  Setup (Terminal 2)   │  │   │
+│  │  │  │ semaforo_rpi  │  │   │  scp gdbserver        │  │   │
+│  │  │  └───────────────┘  │   │  scp semaforo_rpi     │  │   │
+│  │  └─────────────────────┘   └───────────────────────┘  │   │
+│  │         puerto 5022 (SSH) y 2345 (GDB)                │   │
+│  └───────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Solución de problemas comunes
+## Nota técnica: por qué el build es multi-stage
 
-| Problema | Solución |
-|----------|----------|
-| `Connection refused` al conectar GDB | Verificar que QEMU está corriendo con `-s -S` |
-| `make: arm-none-eabi-gcc: not found` | Reconstruir la imagen Docker |
-| `pdb` no aparece al ejecutar Python | Verificar que se agregó `breakpoint()` en el código |
-| Imágenes OpenCV no se guardan | Verificar permisos en `/tmp` dentro del contenedor |
-
----
-
-## Notas sobre QEMU y Raspberry Pi
-
-La máquina **`versatilepb`** usada en esta demo es hardware ARM real emulado,
-equivalente a la arquitectura de una **Raspberry Pi 1** (ARM926EJ-S).
-
-QEMU también soporta emulación directa de Raspberry Pi:
-
-```bash
-# Raspberry Pi 2 (ARM Cortex-A7)
-qemu-system-arm -M raspi2b ...
-
-# Raspberry Pi 3 (AArch64 Cortex-A53)
-qemu-system-aarch64 -M raspi3b ...
-```
-
-Para estos modelos se necesita una imagen de kernel y DTB específicos.
-El flujo de GDB es **idéntico** en todos los casos.
+El toolchain `arm-linux-gnueabihf` de Ubuntu 22.04 genera código ARMv7.
+Su `crt1.o` contiene instrucciones ARMv7 que causan `SIGILL` en el
+arm1176 (ARMv6) de QEMU. La solución es compilar ambos binarios ARM
+(`gdbserver` y `semaforo_rpi`) en Stage 1 con `dockcross/linux-armv6-lts`,
+que tiene un toolchain construido desde cero para ARMv6 con los CRT correctos.
+Stage 2 copia esos binarios a la imagen final de Ubuntu 22.04.
 
 ---
 
-*Generado para el Taller de Sistemas Embebidos — ITCR — 2026*
+## Solución de problemas
 
-
-parte nueva
-
-# Minitaller: Emulación y Depuración en Sistemas Embebidos
-
-> **Curso:** Taller de Sistemas Embebidos — ITCR  
-> **Duración:** 90–110 minutos  
-> **Entorno:** Docker (reproducible en cualquier laptop)
-
----
-
-## Estructura del repositorio
-
-```
-minitaller-embebidos/
-├── Dockerfile                       ← Ubuntu 22.04 + QEMU + toolchains + gdbserver ARMv6
-├── docker-compose.yml               ← servicios embebidos y tutorial-pdb
-│
-├── demo_gdb/                        ← Demo principal: QEMU + Raspberry Pi OS + GDB
-│   ├── semaforo_rpi.c               ← programa C con printf/sleep para ARM Linux
-│   ├── Makefile                     ← compila con arm-linux-gnueabihf-gcc
-│   ├── run_qemu_rpi.sh              ← lanza QEMU con Raspberry Pi OS
-│   ├── setup_gdbserver.sh           ← copia gdbserver y semaforo al RPi via SSH
-│   ├── demo.gdb                     ← guion GDB automático para clase
-│   └── images/                      ← ⚠ NO incluidos en el repo (ver abajo)
-│       ├── raspios.img              ← Raspbian Buster Lite 2021-05-07 (1.8 GB)
-│       ├── kernel-qemu              ← kernel-qemu-4.19.50-buster
-│       └── versatile-pb.dtb        ← DTB para versatilepb
-│
-└── tutorial_pdb/                    ← Tutorial para estudiantes: Python + pdb
-    ├── semaforo_vision.py           ← programa con 2 bugs (OpenCV)
-    ├── semaforo_vision_SOLUCION.py  ← versión corregida
-    └── README.md                    ← tutorial paso a paso con pdb
-```
+| Síntoma | Causa | Solución |
+|---------|-------|----------|
+| `SIGILL` al hacer `continue` | Binario tiene CRT de ARMv7 | `cp /usr/local/bin/semaforo_rpi_prebuilt /workspace/demo_gdb/semaforo_rpi` antes del SCP |
+| `Failed to get write lock` en QEMU | Otro contenedor tiene la imagen abierta | `docker compose down --remove-orphans` |
+| `No such container` en `docker exec` | Nombre incorrecto | `docker ps` para ver el nombre actual |
+| `Connection refused` en GDB | gdbserver no está corriendo | Relanzar `/tmp/gdbserver :2345 /tmp/semaforo_rpi` en Terminal 1 |
+| `FATAL: kernel too old` en gdbserver | glibc pide kernel ≥ 5.4 | Verificar que Dockerfile usa `dockcross/linux-armv6-lts` (no `latest`) |
+| `Permission denied` al hacer SCP | Permisos en `/home/pi` | Usar `/tmp/` como destino (ya está así en los comandos) |
+| SSH no disponible tras 30 intentos | SSH no habilitado | Desde Terminal 1: `sudo systemctl enable ssh && sudo systemctl start ssh` |
+| Warnings `orphan containers` | Contenedores de sesiones anteriores | `docker compose down --remove-orphans` |
 
 ---
 
-## Descargar imágenes (una sola vez)
-
-```bash
-# Kernel + DTB (ARMv6 compatible con versatilepb)
-cd demo_gdb/images
-wget https://github.com/dhruvvyas90/qemu-rpi-kernel/raw/master/kernel-qemu-4.19.50-buster
-wget https://github.com/dhruvvyas90/qemu-rpi-kernel/raw/master/versatile-pb.dtb
-
-# Imagen Raspbian Buster Lite
-# Desde: https://archive.org/details/raspbian-buster-lite-2021-05-07
-# Descargar: 2021-05-07-raspios-buster-armhf-lite.zip → extraer raspios.img
-```
-
----
-
-## Inicio rápido
-
-```bash
-# 1. Construir imagen Docker (primera vez, ~15 min — compila gdbserver ARMv6)
-docker compose build
-
-# 2. Abrir el contenedor principal
-docker compose run embebidos
-```
-
----
-
-## Demo del profesor: QEMU + GDB + Raspberry Pi OS
-
-### Terminal 1 — Arrancar QEMU
-
-```bash
-# Dentro del contenedor
-cd /workspace/demo_gdb
-./run_qemu_rpi.sh
-```
-
-Espera el prompt `pi@raspberrypi:~$` (≈ 60 s). Login: **pi / raspberry**
-
-### Terminal 2 — Copiar gdbserver al RPi (una sola vez)
-
-```bash
-# Nueva terminal, mismo contenedor
-docker exec -it minitaller-embebidos bash
-cd /workspace/demo_gdb
-./setup_gdbserver.sh
-```
-
-### Terminal 1 (dentro de QEMU) — Lanzar gdbserver
-
-```bash
-gdbserver :2345 ./semaforo_rpi
-```
-
-### Terminal 2 — Conectar GDB
-
-```bash
-# Modo demo automático
-gdb-multiarch -x demo.gdb semaforo_rpi
-
-# O modo manual paso a paso (para mostrar en clase)
-gdb-multiarch semaforo_rpi
-(gdb) set architecture arm
-(gdb) target remote localhost:2345
-(gdb) break main
-(gdb) continue
-(gdb) print estado_actual
-(gdb) print ciclos_completados
-(gdb) next
-(gdb) set variable ciclos_completados = 2
-(gdb) continue
-```
-
----
-
-## Tutorial de estudiantes: Python + pdb
-
-```bash
-# En el contenedor tutorial-pdb o embebidos
-cd /workspace/tutorial_pdb
-
-# Ejecutar programa con bugs (observar síntomas)
-python3 semaforo_vision.py
-
-# Iniciar depuración con pdb
-python3 -m pdb semaforo_vision.py
-
-# Ver tutorial completo
-cat README.md
-```
-
----
-
-## Solución al problema principal: gdbserver para ARMv6
-
-El Dockerfile cross-compila `gdbserver` estático para ARMv6 usando:
-
-```
---host=arm-linux-gnueabihf          ← clave: indica cross-compilation
-CC=arm-linux-gnueabihf-gcc          ← cross-compiler explícito
-CFLAGS="-march=armv6zk -mfpu=vfp -mfloat-abi=hard"  ← ARMv6 exacto
-LDFLAGS="-static -static-libgcc -static-libstdc++"  ← sin dependencias .so
-```
-
-El binario queda en `/usr/local/bin/gdbserver-armv6` y se copia al RPi OS
-via SCP con `setup_gdbserver.sh`.
-
----
 
 ## Referencia GDB rápida
 
