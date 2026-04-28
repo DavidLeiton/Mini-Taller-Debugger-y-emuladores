@@ -375,5 +375,3 @@ quit      (q)            → salir
 ```
 
 ---
-
-*Generado para el Taller de Sistemas Embebidos — ITCR — 2026*
