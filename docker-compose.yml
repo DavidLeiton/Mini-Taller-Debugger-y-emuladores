@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+
+  # ── Servicio principal: QEMU + GDB + semáforo ARM ──────────────────────────
+  embebidos:
+    build: .
+    image: mini-taller-debugger-y-emuladores-embebidos
+    container_name: minitaller-embebidos
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./demo_gdb:/workspace/demo_gdb
+      - ./tutorial_pdb:/workspace/tutorial_pdb
+    # Necesario para montar particiones de la imagen de Raspberry Pi OS
+    privileged: true
+    ports:
+      - "5022:5022"   # SSH → RPi OS dentro de QEMU  (pi / raspberry)
+      - "2345:2345"   # gdbserver → depurar semaforo_rpi con GDB
+    working_dir: /workspace/demo_gdb
+    command: /bin/bash
+
+  # ── Servicio secundario: tutorial Python + pdb ──────────────────────────────
+  tutorial-pdb:
+    build: .
+    image: mini-taller-debugger-y-emuladores-embebidos
+    container_name: minitaller-pdb
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./tutorial_pdb:/workspace/tutorial_pdb
+    working_dir: /workspace/tutorial_pdb
+    command: /bin/bash

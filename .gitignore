@@ -1,0 +1,52 @@
+# =============================================================================
+# Minitaller Sistemas Embebidos — ITCR
+# .gitignore
+# =============================================================================
+
+# ─── Imágenes de disco y kernels (archivos grandes, se descargan por separado)
+# NO se incluyen en el repo. Ver README.md para las URLs de descarga.
+demo_gdb/images/raspios.img
+demo_gdb/images/raspios.img.bak
+demo_gdb/images/kernel-qemu
+demo_gdb/images/kernel-qemu-*
+demo_gdb/images/*.dtb
+demo_gdb/images/*.zip
+demo_gdb/images/*.xz
+demo_gdb/images/*.gz
+
+# Mantener la carpeta images/ en el repo (vacía, con solo el .gitkeep)
+!demo_gdb/images/.gitkeep
+
+# ─── Binarios compilados ──────────────────────────────────────────────────────
+demo_gdb/semaforo_rpi
+demo_gdb/semaforo_rpi.o
+demo_gdb/*.elf
+demo_gdb/*.bin
+demo_gdb/*.o
+
+# ─── Archivos generados por el tutorial Python ───────────────────────────────
+tutorial_pdb/__pycache__/
+tutorial_pdb/*.pyc
+tutorial_pdb/*.pyo
+*.pyc
+*.pyo
+__pycache__/
+
+# ─── SSH: hosts conocidos generados al conectar al QEMU ──────────────────────
+# (sshpass/scp los genera automáticamente dentro del contenedor)
+demo_gdb/.ssh/
+.ssh/known_hosts
+
+# ─── Editores ─────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ─── Docker: no ignorar docker-compose.yml ni Dockerfile ─────────────────────
+# (son parte esencial del proyecto y deben estar en el repo)
+# Solo ignorar sobreescrituras locales:
+docker-compose.override.yml
