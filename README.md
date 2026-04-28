@@ -32,11 +32,16 @@ mv kernel-qemu-4.19.50-buster kernel-qemu
 ```
 
 ```bash
-# Imagen Raspbian Buster Lite (servidor oficial Raspberry Pi)
-wget https://downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2021-05-28/2021-05-07-raspios-buster-armhf-lite.zip
-unzip 2021-05-07-raspios-buster-armhf-lite.zip
+# Verificar que unzip está instalado
+which unzip || sudo apt install unzip
+
+# Imagen Raspbian Buster Lite (archive.org — URL verificada)
+wget --show-progress \
+    "https://archive.org/download/2021-05-07-raspios-buster-armhf-lite/2021-05-07-raspios-buster-armhf-lite.zip" \
+    -O raspios.zip
+unzip raspios.zip
 mv 2021-05-07-raspios-buster-armhf-lite.img raspios.img
-rm 2021-05-07-raspios-buster-armhf-lite.zip
+rm raspios.zip
 ```
 
 Verificar que los tres archivos existen:
@@ -354,9 +359,9 @@ Stage 2 copia esos binarios a la imagen final de Ubuntu 22.04.
 | `Permission denied` al hacer SCP | Permisos en `/home/pi` | Usar `/tmp/` como destino (ya está así en los comandos) |
 | SSH no disponible tras 30 intentos | SSH no habilitado | Desde Terminal 1: `sudo systemctl enable ssh && sudo systemctl start ssh` |
 | Warnings `orphan containers` | Contenedores de sesiones anteriores | `docker compose down --remove-orphans` |
+| `Permission denied` al mover archivos a `images/` | Docker creó la carpeta como root | `sudo chown -R $USER:$USER demo_gdb/images/` |
 
 ---
-
 
 ## Referencia GDB rápida
 
