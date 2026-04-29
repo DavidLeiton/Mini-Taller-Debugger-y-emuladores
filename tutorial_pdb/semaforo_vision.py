@@ -32,7 +32,8 @@ import numpy as np
 # ── Constantes del semáforo ───────────────────────────────────
 NOMBRES_ESTADO = {0: "ROJO", 1: "VERDE", 2: "AMARILLO"}
 
-# Posiciones de los focos en la imagen sintética
+# Posiciones (col, fila) de los focos en la imagen sintética.
+# Para inspeccionar en pdb: hsv[fila, col]  →  hsv[60,50], hsv[150,50], hsv[240,50]
 POSICION_ROJO     = (50, 60)
 POSICION_VERDE    = (50, 150)
 POSICION_AMARILLO = (50, 240)
@@ -90,22 +91,22 @@ def detectar_color_activo(imagen: np.ndarray) -> tuple[str, int]:
     #   Verde   → Hue ≈  35–85
     #   Amarillo→ Hue ≈  20–35
     #
-    # Pista para el alumno: imprime el valor HSV del píxel central
-    # de cada foco con:
-    #   (pdb) p hsv[60, 50]    ← centro del foco ROJO
-    #   (pdb) p hsv[150, 50]   ← centro del foco VERDE
-    # y compara con los rangos declarados abajo.
+    # Pista: inspecciona el píxel central del foco ACTIVO en cada
+    # pausa pdb con:
+    #   Pausa 1 (ROJO):   p hsv[60, 50]    →  [H, S, V]
+    #   Pausa 2 (VERDE):  p hsv[150, 50]   →  [H, S, V]
+    # Luego compara el Hue obtenido con los rangos declarados abajo.
     # ─────────────────────────────────────────────────────────────
 
     rango_rojo_bajo  = np.array([ 35, 100, 100])   # BUG: rango de VERDE
     rango_rojo_alto  = np.array([ 85, 255, 255])   # BUG: rango de VERDE
 
     rango_verde_bajo = np.array([  0, 100, 100])   # BUG: rango de ROJO
-    rango_verde_alto = np.array([ 10, 255, 255])   # BUG: rango de ROJO
+    rango_verde_alto = np.array([ 10, 255, 255])   # BUG: rango de ROJO 
 
     rango_amarillo_bajo = np.array([20, 100, 100])  # ← correcto
     rango_amarillo_alto = np.array([35, 255, 255])  # ← correcto
-
+    
     # Crear máscaras de color
     mascara_rojo     = cv2.inRange(hsv, rango_rojo_bajo,     rango_rojo_alto)
     mascara_verde    = cv2.inRange(hsv, rango_verde_bajo,    rango_verde_alto)
@@ -121,9 +122,10 @@ def detectar_color_activo(imagen: np.ndarray) -> tuple[str, int]:
     # Retorna el PRIMER color con algún píxel, no el DOMINANTE.
     # Esto hace que si hay ruido o coincidencia parcial, falle.
     #
-    # Corrección esperada: encontrar el color con MÁS píxeles.
-    # Pista para el alumno:
-    #   (pdb) p pixeles_rojo, pixeles_verde, pixeles_amarillo
+    # Pista: en la Pausa 4 (VERDE+ruido), evalúa los rangos
+    # correctos directamente en pdb para ver qué conteos
+    # debería producir un detector bien calibrado:
+    #   p pixeles_rojo, pixeles_verde, pixeles_amarillo
     # ─────────────────────────────────────────────────────────────
 
     if pixeles_rojo > 0:          # BUG: retorna rojo si hay CUALQUIER píxel rojo
@@ -153,36 +155,39 @@ def main() -> None:
     print("=" * 52)
     print()
 
+    # ── Caso 4: imagen VERDE con 3 píxeles de ruido rojo ──────
+    # Simula una reflexión ambiental leve (p. ej. luz de un cartel
+    # cercano).  Con Bug #2 presente, esos 3 píxeles son suficientes
+    # para que el detector retorne ROJO en lugar de VERDE.
+    img_ruidosa = crear_imagen_semaforo(1).copy()
+    for fila, col in [(15, 15), (15, 16), (15, 17)]:
+        img_ruidosa[fila, col] = (0, 0, 200)   # BGR: rojo puro
+
+    casos = [
+        (crear_imagen_semaforo(0), "ROJO",     "ROJO",        "semaforo_rojo"),
+        (crear_imagen_semaforo(1), "VERDE",    "VERDE",       "semaforo_verde"),
+        (crear_imagen_semaforo(2), "AMARILLO", "AMARILLO",    "semaforo_amarillo"),
+        (img_ruidosa,              "VERDE",    "VERDE+ruido", "semaforo_verde_ruidoso"),
+    ]
+
     resultados_correctos = 0
-    total_pruebas = 3
-
-    for foco_activo in range(total_pruebas):
-        nombre_real = NOMBRES_ESTADO[foco_activo]
-
-        # Generar imagen del semáforo con el foco indicado
-        imagen = crear_imagen_semaforo(foco_activo)
-
-        # Guardar imagen para que el alumno pueda inspeccionarla
-        guardar_imagen_debug(imagen, f"semaforo_{nombre_real.lower()}")
-
-        # Detectar color (aquí están los bugs)
+    for imagen, nombre_real, etiqueta, nombre_archivo in casos:
+        guardar_imagen_debug(imagen, nombre_archivo)
         color_detectado, pixeles = detectar_color_activo(imagen)
-
-        # Reportar resultado
         correcto = (color_detectado == nombre_real)
         simbolo  = "✓" if correcto else "✗"
-        print(f" {simbolo}  Real: {nombre_real:<10} "
+        print(f" {simbolo}  Real: {etiqueta:<14} "
               f"Detectado: {color_detectado:<12} "
               f"({pixeles} px)")
-
         if correcto:
             resultados_correctos += 1
 
+    total = len(casos)
     print()
     print("-" * 52)
-    print(f"  Resultado: {resultados_correctos}/{total_pruebas} correctas")
+    print(f"  Resultado: {resultados_correctos}/{total} correctas")
 
-    if resultados_correctos < total_pruebas:
+    if resultados_correctos < total:
         print()
         print("  ⚠  El sistema tiene errores de detección.")
         print("     Usa pdb para encontrar los bugs:")
@@ -193,10 +198,14 @@ def main() -> None:
         print()
         print("     2. Ejecuta:  python3 semaforo_vision.py")
         print()
-        print("     3. En pdb prueba:")
-        print("          p hsv[60, 50]     ← píxel del foco ROJO")
-        print("          p hsv[150, 50]    ← píxel del foco VERDE")
-        print("          p pixeles_rojo, pixeles_verde, pixeles_amarillo")
+        print("     3. El programa pausará 4 veces (una por imagen).")
+        print("        En cada pausa, inspecciona el foco ACTIVO:")
+        print()
+        print("          Pausa 1: p hsv[60, 50]    ← foco ROJO")
+        print("          Pausa 2: p hsv[150, 50]   ← foco VERDE")
+        print("          Pausa 4: p pixeles_rojo, pixeles_verde, pixeles_amarillo")
+        print()
+        print("          c  → continúa a la siguiente pausa")
     else:
         print()
         print("  ✔  Todos los colores detectados correctamente.")
