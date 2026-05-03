@@ -85,14 +85,14 @@ Usar siempre `docker ps` para ver el nombre exacto.
 # Construir la imagen (~15-20 min, compila gdbserver ARMv6 desde fuente)
 docker compose build
 
-# Entrar al contenedor
-docker compose run embebidos bash
+# Entrar al contenedor (--service-ports publica los puertos 5022 y 2345)
+docker compose run --service-ports embebidos bash
 ```
 
 ### CASO B — Ya hice build, quiero entrar de nuevo
 ```bash
-# Crear un contenedor nuevo
-docker compose run embebidos bash
+# Crear un contenedor nuevo con puertos publicados
+docker compose run --service-ports embebidos bash
 
 # O, si ya hay uno corriendo, abrir otra terminal en el mismo
 docker ps
@@ -123,7 +123,8 @@ docker ps | grep minitaller
 ### TERMINAL 1 — Arrancar QEMU con Raspberry Pi OS
 
 ```bash
-docker compose run embebidos bash
+# --service-ports es OBLIGATORIO para publicar los puertos 5022 y 2345
+docker compose run --service-ports embebidos bash
 ```
 
 ```bash
@@ -145,7 +146,27 @@ Debes ver:
 pi@raspberrypi:~$
 ```
 
-**No escribas nada más aquí todavía.**
+**⚠ PRIMER ARRANQUE — Habilitar SSH (solo la primera vez con una imagen nueva):**
+
+La imagen descargada de archive.org tiene SSH deshabilitado por defecto.
+Desde el prompt `pi@raspberrypi:~$`, ejecuta:
+
+```bash
+sudo systemctl enable ssh
+sudo systemctl start ssh
+systemctl is-active ssh
+# Debe responder: active
+```
+
+Este cambio queda guardado en `raspios.img`. En todos los boots siguientes
+SSH arranca automáticamente y no necesitas repetir este paso.
+
+**Arranques posteriores:** espera ~30 segundos después del login prompt
+hasta que SSH esté listo. Verifica con:
+```bash
+systemctl is-active ssh
+# active
+```
 
 ---
 
@@ -360,6 +381,8 @@ Stage 2 copia esos binarios a la imagen final de Ubuntu 22.04.
 | SSH no disponible tras 30 intentos | SSH no habilitado | Desde Terminal 1: `sudo systemctl enable ssh && sudo systemctl start ssh` |
 | Warnings `orphan containers` | Contenedores de sesiones anteriores | `docker compose down --remove-orphans` |
 | `Permission denied` al mover archivos a `images/` | Docker creó la carpeta como root | `sudo chown -R $USER:$USER demo_gdb/images/` |
+| `kex_exchange_identification: Connection reset` en SCP | SSH aún generando host keys | Esperar 30 s y reintentar. Verificar con `systemctl is-active ssh` desde el RPi |
+| SCP falla aunque los puertos aparecen en `docker ps` | Falta `--service-ports` en `docker compose run` | Usar `docker compose run --service-ports embebidos bash` |
 
 ---
 
